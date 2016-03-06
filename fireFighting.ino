@@ -119,8 +119,8 @@ int currDistLeft;
 int currDistRight;
 
 //keep track of last chose path
-//int lastPathChoice = NULL; 
-boolean hasBeenReset = false;
+int resetPathChoice = NULL; 
+boolean hasBeenResetToLastSave = false;
 boolean isRightPath = false;
 boolean isLeftPaht = false;
 boolean isForwPath = false;
@@ -212,11 +212,13 @@ void moveWallE(){
   }else{
     stopWallE();
     if(isTurnAvailable()){
-      setAvailablePaths();
+      if(!hasBeenResetToLastSave){
+        setAvailablePaths();
+      }
       setTurnChoice();
       turnRobot(turnChoice);
     }else if(isDeadEnd()){
-      hasBeenReset();
+      goBackToLastSavePoint();
     }
   }
 }
@@ -332,6 +334,7 @@ void setAvailablePaths(){
   if(isLeftTurn()){
     isLeftPath = true;
   }
+  hasBeenReset=false;
   return true;
 }
 
@@ -409,23 +412,28 @@ void addSavePoint(int turn){
  * 1]Move back distance traveled, while keeping track of 
  */
 void goBackToLastSavePoint(){
-  FLIP robot 180 degrees
+  flipRobot180();
   int distanceToGo = distanceStack.pop();
   move this distance
   //figure out if robot continues going forward in corrdior .....finish this
-
+  hasBeenResetToLastSave = true;
   switch(turnStack.pop()){
     case LEFT:
       isLeftPath = false;
+      resetPathChoice = RIGHT;
     break;
     case RIGHT:
       isRightPath = false;
+      resetPathChoice = LEFT;
     break;
   }
-  
-  check if you can continue going straight on the original path, or you need to go through the left/right corridor
+  turnRobot(resetPathChoice);
+  flipRobot180();
 }
 
+void flipRobot180(){
+  
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /**
