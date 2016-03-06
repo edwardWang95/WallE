@@ -1,8 +1,25 @@
 #include <StackList.h>
 #include <math.h>
 
+
+/**
+ * TO DO
+ * 
+ * -handle return to last save point method
+ * --when returned, do not include turn made in the available turns 
+ * 
+ * -Turning
+ * --when does the robot stop turning
+ * 
+ * hot & cold
+ * -when the flame sensor picks up fire, attempt to find source
+ * 
+ */
+
+
+
 //CONSTANTS
-const int STRAIGHT = NULL;  //Default when robot is not turning --> used for mapping
+const int STRAIGHT = 2;  //Default when robot is not turning --> used for mapping
 const int LEFT = 0;
 const int RIGHT = 1;
 
@@ -13,9 +30,15 @@ const int DISTANCE_BETWEEN_IRD_AND_USDS = 3;  //cm.
 //Motor constants
 const int MOTOR_SPEED_STEP_UP = 1;
 const int MOTOR_SPEED_STEP_DOWN = 1;
+const int MOTOR_TURN_SPEED_INCREASE = 5;
+const int MOTOR_TURN_SPEED_DECREASE = 5;
+const int STOP_MOVING = 0;
 
 //Turning Deviation from wall, [cm]
-const int TURN_POINT_DEVIATION = 20;
+const int TURN_POINT_THRESHOLD = 20;
+
+//End of Corridor [cm]
+const int END_OF_CORRIDOR = 20;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //COMPONENTS
@@ -72,7 +95,10 @@ int irProxRight;
  * Variables used for calculations and keeping track of distance/speed
  */
 
-//Turning Biases
+//Turning 
+int turnChoice;
+//Biases
+int mainBias = NULL;
 int leftBias = 50;
 int rightBias = 50;
 
@@ -81,6 +107,9 @@ int distMoved;
 StackList<int> turnStack; //keep track of all turns
 StackList<int> distanceStack; //keep track of how far WallE moves after each turn
 
+/**
+ * Variables shown will be calculated based on IRDistance Sensor
+ */
 //Distance from corridors
 //Previous
 int prevDistLeft;
@@ -88,6 +117,13 @@ int prevDistRight;
 //Curr
 int currDistLeft;
 int currDistRight;
+
+//keep track of last chose path
+//int lastPathChoice = NULL; 
+boolean hasBeenReset = false;
+boolean isRightPath = false;
+boolean isLeftPaht = false;
+boolean isForwPath = false;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -123,6 +159,7 @@ void loop() {
   }
   
 }
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Check if the bias is set. In the case both are pressed, then you have the def 
@@ -150,13 +187,16 @@ void setTurnBias(int bias){
     case LEFT:
       leftBias = 80;
       rightBias = 20;
+      mainBias = LEFT;
       break;
     case RIGHT:
       rightBias = 80;
       leftBias = 20;
+      mainBias = RIGHT;
       break;
   }
 }
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Manage the movement of WallE for scenarios:
@@ -165,24 +205,26 @@ void setTurnBias(int bias){
  * -confronting dead ends
  */
 void moveWallE(){
-  updateDistances();
+  updateIRDistances();
   //Before meeting a turn/deadEnd/corridor, continue incrementing distance counter
   if(!isTurnAvailable() && !isDeadEnd()){
     keepWallEMovingParallelToCorridors();
   }else{
-    
-    //before making a turn, save distance traveled to save point
-    //TEMPORARY CODE EXAMPLE
-    saveDistToSavePoint(   distance    );
-    distanceStack.push(distance);
-    addSavePoint(  turn   ); 
+    stopWallE();
+    if(isTurnAvailable()){
+      setAvailablePaths();
+      setTurnChoice();
+      turnRobot(turnChoice);
+    }else if(isDeadEnd()){
+      hasBeenReset();
+    }
   }
 }
 
 /**
  * Update distances for left/right/forward faces of robot using the IRD sensors
  */
-void updateDistances(){
+void updateIRDistances(){
   updateIRDLeft();
   updateIRDRight();
 }
@@ -212,8 +254,11 @@ void keepWallEMovingParallelToCorridors(){
   }
   if(prevDistLeft!=currDistLeft || prevDistRight!=currDistRight){
     adjustSpeed();
-    setSpeedOfMotors(rightMotorSpeed,leftMotorSpeed);
   }
+}
+
+void stopWallE(){
+  setSpeedOfMotors(STOP_MOVING,STOP_MOVING);
 }
 
 void adjustSpeed(){
@@ -222,6 +267,7 @@ void adjustSpeed(){
   }else if(prevDistRight > currDistRight){
     rightMotorSpeed+=MOTOR_SPEED;
   }
+  setSpeedOfMotors(rightMotorSpeed,leftMotorSpeed);
 }
 
 /**
@@ -236,29 +282,109 @@ void setSpeedOfMotors(rightSpeed, leftSpeed){
 //TURNING
 /**
  * Check if any turning points are available.
- * Turning points are found when the current distance found initially by the IRD sensor is significantly greater than the prevDistFromLeft/Right
- * To be sure is when the calculated currDistLeft/Right is significantly greater than the 
+ * Turning points are found when the current distance found initially by the IRD sensor is 
+ * significantly greater than the right/left ping sensor
  */
 boolean isTurnAvailable(){
-  return (isRightTurnPoint() || isLeftTurnPoint());
-}
-
-boolean isRightTurnPoint(){
-  return (currDistRight > (prevDistRight + TURN_POINT_DEVIATION));
-}
-
-boolean isLeftTurnPoint(){
-  return (currDistLeft > (prevDistRight + TURN_POINT_DEVIATION));
+  return (isRightTurn() || isLeftTurn());
 }
 
 /**
- * 1]if the USDS return is approx. equal to IRD sensors && << const distance, then there is a dead end
+ * Check for existing right turn.
+ */
+boolean isRightTurn(){
+  return(currDistRight-usdsRight > TURN_POINT_THRESHOLD);
+}
+
+/**
+ * Check for existing left turn.
+ */
+boolean isLeftTurn(){
+  return(currDistLeft-usdsLeft > TURN_POINT_THRESHOLD);
+}
+
+/**
+ * Returns true if front corridor is less than constant END_OF_CORRIDOR
+ */
+boolean isFrontCorridorEnd(){
+  return(usdsFront<=END_OF_CORRIDOR);
+}
+
+/**
+ * If there is a dead end, return to the last save point
  */
 boolean isDeadEnd(){
-  if(!isRightTurnPoint() && !isLeftTurnPoint()&& 
-    ()){
-      return true;
-    }
+  return(!isRightTurn && !isLeftTurn && isFrontCorridorEnd);
+}
+
+//////////////////////////////////////////////////////////////////////////////
+/**
+ * Robot will make turns the main priority. In the case that turns are exhausted,
+ * only then, robot will continue moving forward.
+ */
+ /**
+  * Sets the available paths.
+  */
+void setAvailablePaths(){
+  if(isRightTurn()){
+    isRightPath = true;
+  }
+  if(isLeftTurn()){
+    isLeftPath = true;
+  }
+  return true;
+}
+
+ /**
+  * Check what paths the robot can take
+  */
+void setTurnChoice(){
+  if(isRightPath && isLeftPath){
+    handleBothAvailableTurns();
+  }else if(isRightPath && !isLeftPath){ //only right turn available
+    turnChoice = RIGHT;
+  }else if(!isRightPath && isLeftPath){ //only left turn available
+    turnRobot = LEFT;
+  }
+}
+
+void handleBothAvailableTurns(){
+  turnChoice = random(100);
+  switch(mainBias){
+    case LEFT:
+      turnChoice = ((turnChoice > rightBias)?LEFT:RIGHT);
+    break;
+    case RIGHT:
+      turnChoice = ((turnChoice > leftBias)?RIGHT:LEFT);
+    break;
+    case NULL:
+      turnChoice = ((turnChoice >= 50)?LEFT:RIGHT);
+    break;
+  }
+}
+
+/**
+ * Turn robot
+ * 1]Save distance traveled to save point
+ * 2]Turn robot
+ * --Increase speed of wheel opposite to the direction being turned to
+ * --Decrease speed of wheel in direction of turn
+ * 3]Add save point
+ */
+void turnRobot(int turn){
+  //Add the distance traveled to get to opening
+  distanceStack.push(distMoved);
+  switch(turn){
+    case LEFT:
+      rightSpeed+=MOTOR_TURN_SPEED_INCREASE;
+      leftSpeed-=MOTOR_TURN_SPEED_DECREASE;
+    break;
+    case RIGHT:
+      leftSpeed+=MOTOR_TURN_SPEED_INCREASE;
+      rightSpeed-=MOTOR_TURN_SPEED_DECREASE;
+    break;
+  }
+  addSavePoint(turn);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -267,8 +393,6 @@ boolean isDeadEnd(){
  * Keep track of turns and distance ran by robot along the maze.
  */
 void addSavePoint(int turn){
-  //Add the distance traveled to get to opening
-  distanceStack.push(distMoved);
   switch(turn){
     case LEFT:
       turnStack.push(LEFT);
@@ -288,7 +412,17 @@ void goBackToLastSavePoint(){
   FLIP robot 180 degrees
   int distanceToGo = distanceStack.pop();
   move this distance
-  turnStack.pop();    //figure out if robot continues going forward in corrdior .....finish this
+  //figure out if robot continues going forward in corrdior .....finish this
+
+  switch(turnStack.pop()){
+    case LEFT:
+      isLeftPath = false;
+    break;
+    case RIGHT:
+      isRightPath = false;
+    break;
+  }
+  
   check if you can continue going straight on the original path, or you need to go through the left/right corridor
 }
 
