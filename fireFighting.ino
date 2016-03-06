@@ -5,14 +5,14 @@
 /**
  * TO DO
  * 
- * -handle return to last save point method
- * --when returned, do not include turn made in the available turns 
- * 
- * -Turning
- * --when does the robot stop turning
+ * fix logic involving turn choices
  * 
  * hot & cold
  * -when the flame sensor picks up fire, attempt to find source
+ * 
+ * return to beginning
+ * 
+ * avoid teddybear
  * 
  */
 
@@ -227,8 +227,6 @@ void moveWallE(){
       }
       setTurnChoice();
       turnRobot(turnChoice);
-    }else if(isFrontCorridorEnd()){
-      
     }else if(isDeadEnd()){
       goBackToLastSavePoint();
     }
@@ -253,12 +251,14 @@ void updateIRDRight(){
 /**
  * Check if robot is in corridor by cross referencing IRD and usds sensors.
  */
+ /*
 void isCooridor(){
   if((currDistLeft-usdsLeft > TURN_POINT_THRESHOLD) && (usdsLeft > TURN_POINT_THRESHOLD))
     || ((currDistRight-usdsRight > TURN_POINT_THRESHOLD) && (usdsRight > TURN_POINT_THRESHOLD)))
 
     
 }
+*/
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -367,7 +367,7 @@ void setAvailablePaths(){
 /**
  * Update the available path after exhausting a turning point and calling the resetToLastSavePoint().
  */
-void updateAvailablPaths(int exhaustedPath){
+void updateAvailablePaths(int exhaustedPath){
   switch(exhaustedPath){
     case LEFT:
       isLeftPath = false;
@@ -392,45 +392,11 @@ void setTurnChoice(){
       turnChoice = RIGHT;
     }else if(!isRightPath && isLeftPath){ //only left turn available
       turnChoice = LEFT;
-    }else if(isRightPath && isLeftPath){
-      turnChoice = STRAIGHT;
     }
   }else{
     handleResetToLastSave();
   }
   
-}
-
-void handleResetToLastSave(){
-  switch(lastChosenPath){
-    case RIGHT:
-      if(isLeftPath){ //There exists a LEFT path
-        turnChoice = STRAIGHT;
-        addSavePoint(LEFT);
-      }else if(isForwPath){ //There is no LEFT turn, only a continuation STRAIGHT
-        turnChoice = RIGHT;
-        addSavePoint(STRAIGHT);
-      }else{  //No left or straight path, Hook turn, robot must go back another save point
-        goBackToLastSavePoint();
-      }
-    break;
-    case LEFT:
-      if(isRightPath){  //Exists a RIGHT path
-        turnChoice = STRAIGHT;
-        addSavePoint(RIGHT);
-      }else if(isForwPath){ //There is no RIGHT turn, only a continuation STRAIGHT
-        turnChoice = LEFT;
-        addSavePoint(STRAIGHT);
-      }else{
-        goBackToLastSavePoint();
-      }
-    break:
-    case STRAIGHT:  //Turn case is down a path where turn points have been exhausted 
-      goBackToLastSavePoint();
-      return; //Because the robot resets to last save point again, we don't want to change status of the hasBeenResetToLastSave bool
-    break;
-  }
-  hasBeenResetToLastSave = false; //Reset the reset switch
 }
 
 void handleBothAvailableTurns(){
@@ -511,7 +477,9 @@ void addSavePoint(int turn){
 }
 
 /**
- * 1]Move back distance traveled, while keeping track of 
+ * If the reset flag has not been raised, flip robot and go back. Else,
+ * just turn back a certain distance. The turning of the robot for the else case
+ * is already handled by the handleResetToLastSave method.
  */
 void goBackToLastSavePoint(){
   if(!hasBeenResetToLastSavePoint){
@@ -519,11 +487,53 @@ void goBackToLastSavePoint(){
     hasBeenResetToLastSave = true;   
   }
   int distanceToGo = distanceStack.pop();
-  move this distance
+
+
+  
+  move this distance !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   //figure out if robot continues going forward in corrdior .....finish this
   
   lastChosenPath = turnStack.pop();
   updateAvailablePaths(lastChosenPath);
+}
+
+
+void handleResetToLastSave(){
+  updateAvailablePaths(lastChosenPath);
+  switch(lastChosenPath){
+    case RIGHT:
+      if(isLeftPath){ //There exists a LEFT path
+        turnChoice = STRAIGHT;
+        addSavePoint(LEFT);
+      }else if(isForwPath){ //There is no LEFT turn, only a continuation STRAIGHT
+        turnChoice = RIGHT;
+        addSavePoint(STRAIGHT);
+      }else{  //No left or straight path, Hook turn, robot must go back another save point
+        //Turn back to the corridor, and go back another save point
+        turnChoice = LEFT;
+        turnRobot(turnChoice);
+        goBackToLastSavePoint();
+      }
+    break;
+    case LEFT:
+      if(isRightPath){  //Exists a RIGHT path
+        turnChoice = STRAIGHT;
+        addSavePoint(RIGHT);
+      }else if(isForwPath){ //There is no RIGHT turn, only a continuation STRAIGHT
+        turnChoice = LEFT;
+        addSavePoint(STRAIGHT);
+      }else{
+        turnChoice = RIGHT;
+        turnRobot(turnChoice);
+        goBackToLastSavePoint();
+      }
+    break:
+    case STRAIGHT:  //Turn case is down a path where turn points have been exhausted 
+      goBackToLastSavePoint();
+      return; //Because the robot resets to last save point again, we don't want to change status of the hasBeenResetToLastSave bool
+    break;
+  }
+  hasBeenResetToLastSave = false; //Reset the reset switch
 }
 
 /**
