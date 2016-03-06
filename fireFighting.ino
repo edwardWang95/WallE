@@ -215,8 +215,10 @@ void moveWallE(){
       setAvailablePaths();
       setTurnChoice();
       turnRobot(turnChoice);
+    }else if(isFrontCorridorEnd()){
+      
     }else if(isDeadEnd()){
-      hasBeenReset();
+      goBackToLastSavePoint();
     }
   }
 }
