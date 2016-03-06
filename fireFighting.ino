@@ -1,19 +1,23 @@
 #include <StackList.h>
+#include <math.h>
 
-//Constants
+//CONSTANTS
 const int STRAIGHT = NULL;  //Default when robot is not turning --> used for mapping
 const int LEFT = 0;
 const int RIGHT = 1;
 
-//Turning Biases
-int leftBias = 50;
-int rightBias = 50;
+//IRD
+const int IRD_ANGLE = 45;
+const int DISTANCE_BETWEEN_IRD_AND_USDS = 3;  //cm.
 
-//Mapping
-int distMoved;
-StackList<int> turnStack; //keep track of all turns
-StackList<int> distanceStack; //keep track of how far WallE moves after each turn
+//Motor constants
+const int MOTOR_SPEED_STEP_UP = 1;
+const int MOTOR_SPEED_STEP_DOWN = 1;
 
+//Turning Deviation from wall, [cm]
+const int TURN_POINT_DEVIATION = 20;
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //COMPONENTS
 //Buttons
 const int btLeftPin;
@@ -24,13 +28,17 @@ int rightBtState;
 //Motors
 const int rightMotorPin;
 const int leftMotorPin;
-int rightMotorSpeed;
-int leftMotorSpeed;
+//DEFAULT SPEED
+int rightMotorSpeed = 10;
+int leftMotorSpeed = 10;
 //Distance traveled by motor
-int rightMotorDistance;
-int leftMotorDistance;
+int rightMotorDist;
+int leftMotorDist;
 
 //SENSORS
+/**
+ * Value: Cm.
+ */
 //Ultra-sonic distance sensor
 const int usdsLeftPin;
 const int usdsFrontPin;
@@ -38,30 +46,77 @@ const int usdsRightPin;
 int usdsLeft;
 int usdsFront;
 int usdsRight;
-//IR-Distance Sensor
-const int irDLeftPin;
-const int irDRightPin;
-int irDLeft;
-int irDRight;
-//IR-Proximity Sensor
-const int irPLeftPin;
-const int irPFrontPin;
-const int irPRightPin;
-int irPLeft;
-int irPFront;
-int irPRight;
 
+/**
+ * 
+ */
+//IR-Distance Sensor
+const int irDistLeftPin;
+const int irDistRightPin;
+int irDistLeft;
+int irDistRight;
+
+/**
+ * Distance
+ */
+//IR-Proximity Sensor
+const int irProxLeftPin;
+const int irProxFrontPin;
+const int irProxRightPin;
+int irProxLeft;
+int irProxFront;
+int irProxRight;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/**
+ * Variables used for calculations and keeping track of distance/speed
+ */
+
+//Turning Biases
+int leftBias = 50;
+int rightBias = 50;
+
+//Mapping
+int distMoved;
+StackList<int> turnStack; //keep track of all turns
+StackList<int> distanceStack; //keep track of how far WallE moves after each turn
+
+//Distance from corridors
+//Previous
+int prevDistLeft;
+int prevDistRight;
+//Curr
+int currDistLeft;
+int currDistRight;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void setup() {
-  // put your setup code here, to run once:
+  
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  //Button 
+  leftBtState = analogRead(btLeftPin);
+  rightBtState = analogRead(btRightPin);
 
-  1]Get input from user for setting turn bias
-  leftBtState = digitalRead(btLeftPin);
-  rightBtState = digitalRead(btRightPin);
+  //Motor 
+  rightMotorDist = analogRead(rightMotorPin);
+  leftMotorDist = analogRead(leftMotorPin);
+
+  //USDS
+  usdsLeft = convertMicrosecondsToCentimeters(pulseIn(usdsLeftPin,HIGH));
+  usdsFront = convertMicrosecondsToCentimeters(pulseIn(usdsFrontPin,HIGH));
+  usdsRight = convertMicrosecondsToCentimeters(pulseIn(usdsRightPin,HIGH));
+
+  //IR-Distance   //Convert voltage reading to cm
+  irDistLeft = analogRead(irDistLeftPin);
+  irDistRight = analogRead(irDistRightPin);
+
+  //IR-Proxy
+  irProxLeft = analogRead(irProxLeftPin);
+  irProxFront = analogRead(irProxFrontPin);
+  irProxRight = analogRead(irProxRightPin);
   
   if(biasIsSet(leftBtState,rightBtState)){  //Once the bias has been set, wallE can begin moving through the obstacle course
     moveWallE();
@@ -110,21 +165,104 @@ void setTurnBias(int bias){
  * -confronting dead ends
  */
 void moveWallE(){
-  //move WallE
-
+  updateDistances();
   //Before meeting a turn/deadEnd/corridor, continue incrementing distance counter
-  //PSEUDOCODE
-  while(!turn || !deadEnd || !corridor){
-    distMoved++;
+  if(!isTurnAvailable() && !isDeadEnd()){
+    keepWallEMovingParallelToCorridors();
+  }else{
+    
+    //before making a turn, save distance traveled to save point
+    //TEMPORARY CODE EXAMPLE
+    saveDistToSavePoint(   distance    );
+    distanceStack.push(distance);
+    addSavePoint(  turn   ); 
   }
-  
-  //before making a turn, save distance traveled to save point
-  //TEMPORARY CODE EXAMPLE
-  saveDistToSavePoint(   distance    );
-  distanceStack.push(distance);
-  addSavePoint(  turn   );
 }
 
+/**
+ * Update distances for left/right/forward faces of robot using the IRD sensors
+ */
+void updateDistances(){
+  updateIRDLeft();
+  updateIRDRight();
+}
+
+void updateIRDLeft(){
+  currDistLeft = (irDistLeft*cos(IRD_ANGLE)) - DISTANCE_BETWEEN_IRD_AND_USDS;
+}
+void updateIRDRight(){
+  currDistRight = (irDistRight*cos(IRD_ANGLE)) - DISTANCE_BETWEEN_IRD_AND_USDS;
+}
+
+/**
+ * Keep WallE moving parallel to the corridors, using the IR-Dist and USDS sensor readings.
+ * 
+ * 1]Cofirm distance away from wall
+ * 2]In case of any increasing/decreasing values, speed/slow down right/left motor 
+ * 
+ * irDistLeft
+ * irDistRight
+ * 
+ */
+void keepWallEMovingParallelToCorridors(){
+  //At beginning, move robot forward a given amount to start mapping out corridor
+  if(prevDistLeft==0 && prevDistRight==0){
+    prevDistLeft = currDistLeft;
+    prevDistRight = currDistRight;
+  }
+  if(prevDistLeft!=currDistLeft || prevDistRight!=currDistRight){
+    adjustSpeed();
+    setSpeedOfMotors(rightMotorSpeed,leftMotorSpeed);
+  }
+}
+
+void adjustSpeed(){
+  if(prevDistLeft > currDistLeft){
+    leftMotorSpeed+=MOTOR_SPEED;
+  }else if(prevDistRight > currDistRight){
+    rightMotorSpeed+=MOTOR_SPEED;
+  }
+}
+
+/**
+ * Set speed of motor
+ */
+void setSpeedOfMotors(rightSpeed, leftSpeed){
+  rightMotorPin.analogWrite(rightSpeed);
+  leftMotorPin.analogWrite(leftSpeed);
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//TURNING
+/**
+ * Check if any turning points are available.
+ * Turning points are found when the current distance found initially by the IRD sensor is significantly greater than the prevDistFromLeft/Right
+ * To be sure is when the calculated currDistLeft/Right is significantly greater than the 
+ */
+boolean isTurnAvailable(){
+  return (isRightTurnPoint() || isLeftTurnPoint());
+}
+
+boolean isRightTurnPoint(){
+  return (currDistRight > (prevDistRight + TURN_POINT_DEVIATION));
+}
+
+boolean isLeftTurnPoint(){
+  return (currDistLeft > (prevDistRight + TURN_POINT_DEVIATION));
+}
+
+/**
+ * 1]if the USDS return is approx. equal to IRD sensors && << const distance, then there is a dead end
+ */
+boolean isDeadEnd(){
+  if(!isRightTurnPoint() && !isLeftTurnPoint()&& 
+    ()){
+      return true;
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//MAPPING
 /**
  * Keep track of turns and distance ran by robot along the maze.
  */
@@ -155,5 +293,19 @@ void goBackToLastSavePoint(){
 }
 
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/**
+ * USDS: Convert microsec pings to cm
+ */
+long convertMicrosecondsToCentimeters(long microsec){
+  return microsec/29/2;
+}
+
+/**
+ * IR-Dist: Convert voltage readings to cm
+ */
+long convertVoltToCm(){
+  
+}
 
 
