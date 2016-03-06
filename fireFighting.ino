@@ -19,26 +19,33 @@
 
 
 //CONSTANTS
-const int FORWARD = 2;  //Default when robot is not turning --> used for mapping
+//Directions
 const int LEFT = 0;
 const int RIGHT = 1;
+const int FORWARD = 2;  //Default when robot is not turning --> used for mapping
 
 //IRD
 const int IRD_ANGLE = 45;
 const int DISTANCE_BETWEEN_IRD_AND_USDS = 3;  //cm.
+const int IRD_USDS_DISTANCE_DEVIATION = 5;
 
 //Motor constants
 const int MOTOR_SPEED_STEP_UP = 1;
 const int MOTOR_SPEED_STEP_DOWN = 1;
-const int MOTOR_TURN_SPEED_INCREASE = 5;
-const int MOTOR_TURN_SPEED_DECREASE = 5;
+  //These const, manage the speeds of the left/right motors when turning
+const int MOTOR_TURN_SPEED_DOMINANT = 15;
+const int MOTOR_TURN_SPEED_RECESSIVE = 10;
 const int STOP_MOVING = 0;
+  //Used when robot is making an about face from dead end
+const int MOTOR_SPIN_BACKWARD = 10;
+const int MOTOR_SPIN_FORWARD = 10;
 
 //Turning Deviation from wall, [cm]
 const int TURN_POINT_THRESHOLD = 20;
 
 //End of Corridor [cm]
 const int END_OF_CORRIDOR = 20;
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //COMPONENTS
@@ -131,7 +138,15 @@ void setup() {
   
 }
 
-void loop() {
+void loop() { 
+  getSensorInput();
+  if(biasIsSet(leftBtState,rightBtState)){  //Once the bias has been set, wallE can begin moving through the obstacle course
+    moveWallE();
+  }
+  
+}
+
+void getSensorInput(){
   //Button 
   leftBtState = analogRead(btLeftPin);
   rightBtState = analogRead(btRightPin);
@@ -153,11 +168,6 @@ void loop() {
   irProxLeft = analogRead(irProxLeftPin);
   irProxFront = analogRead(irProxFrontPin);
   irProxRight = analogRead(irProxRightPin);
-  
-  if(biasIsSet(leftBtState,rightBtState)){  //Once the bias has been set, wallE can begin moving through the obstacle course
-    moveWallE();
-  }
-  
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -451,19 +461,34 @@ void turnRobot(int turn){
   distanceStack.push(distMoved);
   switch(turn){
     case LEFT:
-      rightSpeed+=MOTOR_TURN_SPEED_INCREASE;
-      leftSpeed-=MOTOR_TURN_SPEED_DECREASE;
+      rightSpeed=MOTOR_TURN_SPEED_DOMINANT;
+      leftSpeed=MOTOR_TURN_SPEED_RECESSIVE;
     break;
     case RIGHT:
-      leftSpeed+=MOTOR_TURN_SPEED_INCREASE;
-      rightSpeed-=MOTOR_TURN_SPEED_DECREASE;
+      leftSpeed=MOTOR_TURN_SPEED_DOMINANT;
+      rightSpeed=MOTOR_TURN_SPEED_RECESSIVE;
     case FORWARD:
       break;
     break;
   }
+  moveRobotUntilTurnOrFlipIsComplete(rightSpeed,leftSpeed);
   addSavePoint(turn);
 }
 
+void moveRobotUntilTurnOrFlipIsComplete(int rightSpeed, int leftSpeed){
+  setSpeedOfMotors(rightSpeed,leftSpeed);
+  while(!(currDistLeft-IRD_USDS_DISTANCE_DEVIATION<=usdsLeft<=currDistLeft+IRD_USDS_DISTANCE_DEVIATION) 
+        && 
+        !(currDistRight-IRD_USDS_DISTANCE_DEVIATION<=usdsRight<=currDistRight-IRD_USDS_DISTANCE_DEVIATION)){
+    getSensorInput();
+    updateIRDDIstances();
+  }
+  resetMotorSpeedBackToOriginal();
+}
+
+void resetMotorSpeedBackToOriginal(){
+  setSpeedOfMotors(rightMotorSpeed,leftMotorSpeed);
+}
 //////////////////////////////////////////////////////////////////////////////
 //MAPPING
 /**
@@ -491,7 +516,7 @@ void addSavePoint(int turn){
 void goBackToLastSavePoint(){
   if(!hasBeenResetToLastSavePoint){
     flipRobot180();
-    hasBeenResetToLastSave = true;    //when do i set this back to false?????
+    hasBeenResetToLastSave = true;   
   }
   int distanceToGo = distanceStack.pop();
   move this distance
@@ -501,11 +526,15 @@ void goBackToLastSavePoint(){
   updateAvailablePaths(lastChosenPath);
 }
 
-
+/**
+ * Spins the wheels of WallE in opposite directions while keeping track of, and comparing the
+ * distances of the IRD and USDS
+ */
 void flipRobot180(){
-  
+  leftSpeed = MOTOR_SPIN_BACKWARD;
+  rightSPEED = MOTOR_SPIN_FORWARD;
+  moveRobotUntilTurnOrFlipIsComplete(rightSpeed,leftSpeed);
 }
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /**
  * USDS: Convert microsec pings to cm
@@ -520,5 +549,4 @@ long convertMicrosecondsToCentimeters(long microsec){
 long convertVoltToCm(){
   
 }
-
 
