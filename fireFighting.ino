@@ -7,6 +7,8 @@
  * 
  * fix logic involving turn choices
  * 
+ * open field
+ * 
  * hot & cold
  * -when the flame sensor picks up fire, attempt to find source
  * 
@@ -67,7 +69,7 @@ int leftMotorDist;
 
 //SENSORS
 /**
- * Value: Cm.
+ * Used to find front corridors as well as increase accuracy of turn/searching algorithms
  */
 //Ultra-sonic distance sensor
 const int usdsLeftPin;
@@ -78,7 +80,7 @@ int usdsFront;
 int usdsRight;
 
 /**
- * 
+ * Main distance sensor when finding walls/turns
  */
 //IR-Distance Sensor
 const int irDistLeftPin;
@@ -96,6 +98,12 @@ const int irProxRightPin;
 int irProxLeft;
 int irProxFront;
 int irProxRight;
+
+/**
+ * Flame Sensor
+ */
+const int flameSensorPin;
+int flameDist;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /**
@@ -168,6 +176,9 @@ void getSensorInput(){
   irProxLeft = analogRead(irProxLeftPin);
   irProxFront = analogRead(irProxFrontPin);
   irProxRight = analogRead(irProxRightPin);
+
+  //Flame Sensor
+  flameDist = analogRead(flameSensorPin);
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -216,18 +227,29 @@ void setTurnBias(int bias){
  */
 void moveWallE(){
   updateIRDistances();
+  if(isFireDetected){
+    implementHotColdSearch();
+  }else{
+    handleMovement();
+  }
+}
+
+void handleMovement(){
   //Before meeting a turn/deadEnd/corridor, continue incrementing distance counter
   if(!isTurnAvailable() && !isDeadEnd()){
     keepWallEMovingParallelToCorridors();
   }else{
     stopWallE();
-    if(isTurnAvailable()){
+    //check if there is an openField
+    if(isWallEInOpenField()){
+      handleOpenField();
+    }else if(isTurnAvailable()){  //check if there are turns in the corridor
       if(!hasBeenResetToLastSave){
         setAvailablePaths();
       }
       setTurnChoice();
       turnRobot(turnChoice);
-    }else if(isDeadEnd()){
+    }else if(isDeadEnd()){  //check if there is a dead end
       goBackToLastSavePoint();
     }
   }
@@ -248,17 +270,34 @@ void updateIRDRight(){
   currDistRight = (irDistRight*cos(IRD_ANGLE)) - DISTANCE_BETWEEN_IRD_AND_USDS;
 }
 
-/**
- * Check if robot is in corridor by cross referencing IRD and usds sensors.
- */
- /*
-void isCooridor(){
-  if((currDistLeft-usdsLeft > TURN_POINT_THRESHOLD) && (usdsLeft > TURN_POINT_THRESHOLD))
-    || ((currDistRight-usdsRight > TURN_POINT_THRESHOLD) && (usdsRight > TURN_POINT_THRESHOLD)))
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    
+/**
+ * When a fire is detected, immediately stop the robot
+ */
+boolean isFireDetected(){
+  if(flameDist>0){
+    stopWallE();
+    return true;
+  }
+  return false;
 }
-*/
+
+/**
+ * Hot and Cold search method
+ */
+void implementHotColdSearch(){
+  
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+boolean isTeddyBearDetected(){
+  
+}
+
+void implementAvoidTeddyBear(){
+  
+}
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -301,6 +340,27 @@ void adjustSpeed(){
 void setSpeedOfMotors(rightSpeed, leftSpeed){
   rightMotorPin.analogWrite(rightSpeed);
   leftMotorPin.analogWrite(leftSpeed);
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//Arena
+boolean isWallEInOpenField(){   //fix naming scheme later
+  return(isLeftSideOpenField()||isRightSideOpenField());
+}
+
+/**
+ * Check if the left side of the robot an open field
+ */
+boolean isLeftSideOpenField(){
+  return(currDistLeft>prevDistLeft && usdsLeft>prevDistLeft);
+}
+
+boolean isRightSideOpenField(){
+  return(currDistRight>prevDistLeft && usdsRight>prevDistLeft);
+}
+
+
+void handleOpenField(){
+  
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -508,10 +568,10 @@ void handleResetToLastSave(){
       }else if(isForwPath){ //There is no LEFT turn, only a continuation STRAIGHT
         turnChoice = RIGHT;
         addSavePoint(STRAIGHT);
-      }else{  //No left or straight path, Hook turn, robot must go back another save point
+      }else{  //No left or straight path available, and in possibility of a hook turn, 
+              //robot must go back another save point
         //Turn back to the corridor, and go back another save point
-        turnChoice = LEFT;
-        turnRobot(turnChoice);
+        turnRobot(LEFT);
         goBackToLastSavePoint();
       }
     break;
@@ -523,8 +583,7 @@ void handleResetToLastSave(){
         turnChoice = LEFT;
         addSavePoint(STRAIGHT);
       }else{
-        turnChoice = RIGHT;
-        turnRobot(turnChoice);
+        turnRobot(RIGHT);
         goBackToLastSavePoint();
       }
     break:
