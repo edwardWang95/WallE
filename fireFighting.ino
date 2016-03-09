@@ -11,15 +11,22 @@
  * 
  * hot & cold
  * -when the flame sensor picks up fire, attempt to find source
+ * -create a new stack for distance and turns made, return to original position and trace back after fire is put out
+ * if(see which direction gets highest return, then start moving towards the direction, if decrease turn back, 
+ * if robot has turned, or if in the case of moving, back up and start turning to get largest return value from sensor)
+ * 
  * 
  * return to beginning
  * 
  * avoid teddybear
+ * -any moment the proximity sensor detects anything close, stop robot and move back until safe, then implement move around algorithm
  * 
- * floating walls
- * 
- * am i able to setup a virtual maze testing enviroment for this code?
- * 
+ * floating walls/loop
+ * -if(new turn equals that of the last turn), 
+ * -robot chooses directions randomly/bias, but keep track of last 3 moves + distance to see if 
+ * robot has looped, then influence to make the opposite turn choice when coming to the next turn to get out of loop,
+ * if this stil still doesnt work, log that section as exhausted possible corridor
+ *
  */
 
 
