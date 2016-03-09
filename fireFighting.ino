@@ -16,6 +16,10 @@
  * 
  * avoid teddybear
  * 
+ * floating walls
+ * 
+ * am i able to setup a virtual maze testing enviroment for this code?
+ * 
  */
 
 
@@ -357,7 +361,6 @@ boolean isLeftSideOpenField(){
 boolean isRightSideOpenField(){
   return(currDistRight>prevDistLeft && usdsRight>prevDistLeft);
 }
-
 
 void handleOpenField(){
   
